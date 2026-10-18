@@ -1,0 +1,13 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: ["build", "-t", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/ai-tax-prototypes:$COMMIT_SHA", "."]
+  - name: gcr.io/cloud-builders/docker
+    args: ["push", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/ai-tax-prototypes:$COMMIT_SHA"]
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args: ["run", "deploy", "ai-tax-prototypes", "--image", "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/ai-tax-prototypes:$COMMIT_SHA", "--region", "${_REGION}", "--platform", "managed", "--allow-unauthenticated", "--set-env-vars", "MOCK_AI=true"]
+substitutions:
+  _REGION: asia-southeast1
+  _REPOSITORY: ai-builder
+images:
+  - "${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/ai-tax-prototypes:$COMMIT_SHA"

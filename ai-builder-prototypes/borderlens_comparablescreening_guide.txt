@@ -1,0 +1,1334 @@
+I created a downloadable TypeScript prototype containing both products. It includes a browser UI, Express API, LangGraph.js workflows, deterministic business controls, optional Gemini integration, synthetic datasets, tests, Docker packaging, and a Cloud Run deployment configuration.
+
+Download the BorderLens AI and ComparableScreen AI prototype
+
+The ZIP archive passed an integrity check. I could not run npm install inside the isolated build environment, so the included code should still be dependency-installed and built locally before deployment.
+
+1. What is included
+ai-builder-prototypes/
+├── src/
+│   ├── server.ts
+│   ├── shared/
+│   │   ├── gemini.ts
+│   │   └── types.ts
+│   ├── borderlens/
+│   │   ├── schema.ts
+│   │   └── graph.ts
+│   └── comparablescreen/
+│       ├── schema.ts
+│       └── graph.ts
+├── public/
+│   └── index.html
+├── data/
+│   ├── borderlens/sample.json
+│   └── comparablescreen/sample.json
+├── tests/
+│   └── rules.test.ts
+├── Dockerfile
+├── cloudbuild.yaml
+├── package.json
+├── tsconfig.json
+├── .env.example
+└── README.md
+
+
+Both applications run from one service:
+
+Browser
+   ↓
+Express API
+   ↓
+LangGraph workflow
+   ├── deterministic processing
+   ├── optional Gemini analysis
+   ├── Zod output validation
+   └── evidence-linked results
+
+
+LangGraph.js is designed as a low-level orchestration runtime that can combine deterministic code and model-driven steps, with support for durable execution, streaming, persistence, and human-in-the-loop patterns.
+
+2. BorderLens AI implementation
+Workflow
+Input transaction package
+        ↓
+Normalize transaction
+        ↓
+Run deterministic reconciliation
+        ↓
+Generate or improve explanations
+        ↓
+Validate evidence
+        ↓
+Return canonical transaction and findings
+
+Input structure
+
+The prototype accepts normalized information from four sources:
+
+{
+  "invoice": {
+    "number": "INV-1001",
+    "seller": "Alpha Commodities Singapore",
+    "buyer": "Alpha Trading Vietnam",
+    "currency": "USD",
+    "value": 500000,
+    "incoterm": "CIF",
+    "quantityMt": 1000
+  },
+  "customs": {
+    "declaration": "CD-9001",
+    "currency": "USD",
+    "value": 470000,
+    "incoterm": "FOB",
+    "quantityMt": 1000
+  },
+  "erp": {
+    "document": "ERP-SO-77",
+    "currency": "USD",
+    "revenue": 500000
+  },
+  "agreement": {
+    "pricingPolicy": "Market price less 2% distribution adjustment",
+    "incoterm": "CIF"
+  }
+}
+
+Deterministic reconciliation
+
+The important checks deliberately remain in TypeScript rather than being delegated to the model:
+
+const variance =
+  Math.abs(invoice.value - customs.value) /
+  Math.max(invoice.value, 1);
+
+if (variance > 0.01) {
+  findings.push({
+    code: "VALUE_VARIANCE",
+    severity: variance > 0.05 ? "HIGH" : "MEDIUM",
+    title: "Invoice and customs values differ",
+    evidence: [
+      {
+        source: invoice.number,
+        field: "invoice.value",
+        value: invoice.value
+      },
+      {
+        source: customs.declaration,
+        field: "customs.value",
+        value: customs.value
+      }
+    ]
+  });
+}
+
+
+The 1% and 5% values are demonstration thresholds, not statutory or professional tax thresholds.
+
+The prototype also detects:
+
+invoice versus customs Incoterm differences;
+invoice versus ERP revenue differences;
+insufficient evidence supporting a finding.
+Why this split is important
+
+Gemini is not allowed to:
+
+calculate the source values;
+rewrite evidence;
+determine the variance;
+create source-document identifiers;
+decide whether an exact numerical reconciliation succeeds.
+
+Gemini is used only to improve the narrative explanation, subject to Zod validation.
+
+Google’s structured-output documentation states that Gemini can be configured to generate responses conforming to a JSON schema, including through Zod in JavaScript.
+
+3. ComparableScreen AI implementation
+Workflow
+Candidate-company dataset
+        ↓
+Deterministic quantitative screening
+        ↓
+Qualitative activity screening
+        ↓
+Accept, reject or review decision
+        ↓
+Reasons and matched evidence
+        ↓
+Portfolio statistics
+
+Candidate structure
+type Candidate = {
+  id: string;
+  name: string;
+  description: string;
+  country: string;
+  revenue: number;
+  operatingMargin: number;
+  independent: boolean;
+  yearsAvailable: number;
+};
+
+Deterministic quantitative screening
+
+The following criteria are applied without an LLM:
+
+const kept = candidates.filter(candidate =>
+  candidate.independent &&
+  candidate.revenue >= criteria.minRevenue &&
+  candidate.revenue <= criteria.maxRevenue &&
+  candidate.yearsAvailable >= criteria.minYears &&
+  criteria.countries.includes(candidate.country)
+);
+
+
+This preserves a clear audit trail:
+
+Candidate C4 rejected:
+independent = false
+
+Candidate C5 rejected:
+revenue = 600,000
+minimum revenue = 1,000,000
+
+Qualitative screening
+
+Candidates passing the quantitative screen are evaluated against the tested party’s activity:
+
+Tested activity:
+Wholesale distribution of agricultural commodities
+
+Required activity concepts:
+- wholesale
+- agricultural
+- commodity
+
+
+The mock-mode implementation generates a reproducible keyword score:
+
+const matched = keywords.filter(keyword =>
+  candidate.description.toLowerCase().includes(keyword)
+);
+
+const score = matched.length / keywords.length;
+
+const decision =
+  score >= 0.5
+    ? "ACCEPT"
+    : score > 0
+      ? "REVIEW"
+      : "REJECT";
+
+
+In Gemini mode, the candidate descriptions and screening criteria are sent for structured classification. The resulting decision still has to pass this schema:
+
+const DecisionSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  decision: z.enum(["ACCEPT", "REJECT", "REVIEW"]),
+  score: z.number(),
+  reasons: z.array(z.string()),
+  matchedKeywords: z.array(z.string())
+});
+
+
+For production use, the AI result should be treated as a proposed qualitative decision. A professional reviewer should approve or override it.
+
+4. How to run the prototype
+
+After extracting the ZIP:
+
+cd ai-builder-prototypes
+cp .env.example .env
+npm install
+npm run test
+npm run dev
+
+
+Open:
+
+http://localhost:8080
+
+
+The UI contains two tabs:
+
+BorderLens AI
+ComparableScreen AI
+
+Each tab provides:
+
+a load-sample button;
+editable JSON;
+an analysis button;
+formatted workflow results.
+5. Mock mode versus Gemini mode
+Mock mode
+
+The default configuration is:
+
+PORT=8080
+MOCK_AI=true
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-2.5-flash
+
+
+Mock mode provides:
+
+deterministic output;
+no external API dependency;
+no model cost;
+reliable competition demonstration;
+repeatable automated tests.
+
+This gives you a demo fallback if internet access, authentication, quotas, or the model endpoint fails during judging.
+
+Gemini mode
+
+Set:
+
+export MOCK_AI=false
+export GEMINI_API_KEY="YOUR_API_KEY"
+export GEMINI_MODEL="gemini-2.5-flash"
+npm run dev
+
+
+The implementation uses the current @google/genai TypeScript/JavaScript SDK. Google describes that SDK as supporting both the Gemini Developer API and relevant Google enterprise-hosted Gemini APIs.
+
+The Gemini adapter is deliberately isolated:
+
+export async function generateStructured<T>(
+  prompt: string,
+  schema: ZodType<T>,
+  fallback: T
+): Promise<T> {
+  if (!client) return fallback;
+
+  const response = await client.models.generateContent({
+    model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
+    contents: prompt,
+    config: {
+      responseMimeType: "application/json"
+    }
+  });
+
+  const parsed = JSON.parse(response.text || "{}");
+  return schema.parse(parsed);
+}
+
+
+For the next refinement, pass a formal response schema to Gemini as well as validating it afterward. Google recommends combining a response schema with the JSON MIME type when strict structured output is required.
+
+6. Included API routes
+Health check
+GET /api/health
+
+
+Example response:
+
+{
+  "ok": true,
+  "mockAI": true
+}
+
+BorderLens sample
+GET /api/samples/borderlens
+
+BorderLens analysis
+POST /api/borderlens/analyze
+Content-Type: application/json
+
+ComparableScreen sample
+GET /api/samples/comparablescreen
+
+ComparableScreen analysis
+POST /api/comparables/screen
+Content-Type: application/json
+
+
+This allows the browser, Excel integration, Power BI, a Word add-in, or another client to call the same backend later.
+
+7. Automated tests
+
+The repository includes two initial tests.
+
+BorderLens test
+
+It verifies that the supplied synthetic transaction produces:
+
+VALUE_VARIANCE
+INCOTERM_MISMATCH
+
+
+It also verifies that the evidence review passes.
+
+ComparableScreen test
+
+It verifies:
+
+Input candidates: 5
+Quantitative pass: 3
+Accepted after qualitative screen: 2
+
+
+It also proves that:
+
+the related company is excluded;
+the company below the revenue range is excluded;
+relevant wholesale agricultural candidates proceed.
+
+Run:
+
+npm run test
+
+
+For a competition submission, add at least these additional tests:
+
+BorderLens
+1. Matching values produce no value finding
+2. Different currencies require review, not direct comparison
+3. Missing ERP record generates an evidence-gap finding
+4. Zero invoice value does not cause division by zero
+5. AI cannot modify source evidence
+
+ComparableScreen
+6. Missing company description produces REVIEW
+7. Duplicate companies are detected
+8. Financial years below the threshold are rejected
+9. Unsupported country is rejected
+10. Reviewer override is recorded
+
+8. Cloud Run deployment
+
+The repository includes:
+
+Dockerfile
+.dockerignore
+cloudbuild.yaml
+Prepare Google Cloud
+gcloud auth login
+gcloud config set project YOUR_PROJECT_ID
+
+gcloud services enable \
+  run.googleapis.com \
+  cloudbuild.googleapis.com \
+  artifactregistry.googleapis.com
+
+
+Create the registry:
+
+gcloud artifacts repositories create ai-builder \
+  --repository-format=docker \
+  --location=asia-southeast1
+
+
+Submit the build:
+
+gcloud builds submit \
+  --config cloudbuild.yaml \
+  --substitutions=COMMIT_SHA=manual
+
+
+The included Cloud Build configuration:
+
+builds the Docker image;
+pushes it to Artifact Registry;
+deploys it to Cloud Run;
+exposes the demonstration UI;
+starts in safe mock mode.
+
+Before a public deployment, replace --allow-unauthenticated with a suitable authentication configuration if the application handles anything beyond synthetic competition data.
+
+9. Adding Document AI to BorderLens
+
+The current prototype begins after extraction, using structured JSON. This was intentional so the full business workflow remains runnable without requiring a configured Document AI processor.
+
+The next stage is:
+
+PDF/image uploaded
+       ↓
+Cloud Storage
+       ↓
+Document AI OCR or processor
+       ↓
+Extracted text and layout
+       ↓
+Gemini structured extraction
+       ↓
+BorderInputSchema
+       ↓
+Existing BorderLens graph
+
+
+Google’s Node.js client is installed with:
+
+npm install @google-cloud/documentai
+
+
+The official client supports processing documents through a configured processor and returning recognized document text and structure.
+
+A production adapter would look like:
+
+import { v1 as documentai } from "@google-cloud/documentai";
+
+const client = new documentai.DocumentProcessorServiceClient();
+
+export async function processDocument(
+  content: Buffer,
+  mimeType: string
+) {
+  const name =
+    `projects/${process.env.GCP_PROJECT_ID}` +
+    `/locations/${process.env.DOCUMENT_AI_LOCATION}` +
+    `/processors/${process.env.DOCUMENT_AI_PROCESSOR_ID}`;
+
+  const [result] = await client.processDocument({
+    name,
+    rawDocument: {
+      content: content.toString("base64"),
+      mimeType
+    }
+  });
+
+  return {
+    text: result.document?.text ?? "",
+    pages: result.document?.pages ?? []
+  };
+}
+
+
+Google requires the Cloud project, billing, Document AI API, processor, and authentication to be configured before using the Node.js client.
+
+10. Production hardening priorities
+BorderLens
+
+Add in this order:
+
+Document upload and Cloud Storage
+Document AI extraction
+Source page and bounding-box references
+Currency normalization with stored exchange-rate source
+freight, insurance, assists, royalties, and adjustment fields
+agreement-to-invoice term matching
+human-review interrupt
+downloadable discrepancy register
+case-level authorization
+immutable decision history
+ComparableScreen
+
+Add in this order:
+
+CSV and Excel import
+canonical company-name matching
+duplicate and group-company detection
+quantitative filter configuration
+qualitative business-description classifier
+reviewer override
+rejection-reason taxonomy
+accepted-set PLI calculations
+interquartile-range calculation
+complete screening audit trail
+
+Do not place proprietary commercial-database exports in a public repository unless the relevant license expressly permits it.
+
+11. Security and governance boundary
+
+The prototype uses only synthetic data. Keep that boundary for the public competition version.
+
+Internal guidance emphasizes AI security controls around model, data, prompt, and agent risk, including access control, model isolation, security procedures, and reusable controlled patterns.
+
+Internal AI-use guidance also states that AI outputs are not a substitute for professional judgment and that restrictions concerning prohibited data and engagement-specific AI use must be respected.
+
+For a real deployment, add:
+
+Authentication
+Tenant and engagement authorization
+Secret Manager
+Audit logging
+PII and confidential-data controls
+Prompt-injection defenses
+Outbound-network restrictions
+Write-action approval
+Retention and deletion rules
+Model and prompt versioning
+Human professional sign-off
+
+
+The downloaded package is intentionally a transparent vertical slice rather than a misleading “production-ready” claim. It is functional in mock mode, deployable as a container, and structured so you can visibly explain where deterministic controls end and AI interpretation begins.
+
+
+
+
+
+
+
+
+The strongest competition entry is not a broad “AI tax assistant.” That would be difficult to differentiate and impossible to demonstrate convincingly in three minutes. Your competitive advantage is a narrow, technically sophisticated cross-border workflow that combines transfer pricing, customs, trade documentation, and accounting reconciliation into one evidence-grounded decision system.
+
+First, the competition constraints that affect the strategy
+
+As of October 16, 2026, the official prototype deadline is October 18, 2026. Team formation closed on October 11, so the plan below assumes you are already on a registered team. Teams must have 2–4 members, use Google Cloud’s technology stack, build a fresh project during the competition period, and deploy the working prototype on Cloud Run, GCP, or Firebase. Required submission items are a deployed prototype, public GitHub repository, detailed deck, and video under three minutes.
+
+The weighting is especially important:
+
+Technical Merit and Gen AI Implementation: 40%
+Problem Alignment and Impact: 25%
+Innovation and Creativity: 25%
+User Experience and Solution Design: 10%
+
+Therefore, optimize for:
+
+Technically credible AI
++ a painfully clear business problem
++ visible differentiation
++ a polished three-minute workflow
+
+
+Do not optimize for the largest possible feature list.
+
+1. Recommended winning concept
+“BorderLens AI”
+One-sentence pitch
+
+BorderLens AI reviews a cross-border transaction across commercial invoices, customs declarations, intercompany agreements, accounting records, and transfer-pricing policies, identifies inconsistencies, quantifies exposure, and produces an evidence-linked remediation package for professional review.
+
+Suggested competition theme
+
+Future of Work & Enterprise Productivity
+
+This theme explicitly covers improving how organizations access knowledge, make decisions, and execute workflows.
+
+A secondary framing under BFSI is possible if you emphasize financial control and transaction risk, but Future of Work is the cleaner alignment.
+
+Why this is stronger than a generic tax chatbot
+
+A generic chatbot answers questions. BorderLens AI performs a visible, end-to-end professional workflow:
+
+Upload transaction package
+        ↓
+Extract structured facts
+        ↓
+Reconcile the same transaction across documents
+        ↓
+Detect discrepancies and missing evidence
+        ↓
+Retrieve relevant policy or regulatory material
+        ↓
+Generate risk findings with citations
+        ↓
+Create a reviewer-ready remediation package
+
+
+The solution directly reflects real tax work. Internal tax guidance describes AI as useful for research, document review, knowledge discovery, analysis, and drafting, while professional judgment, legal interpretation, and accountability remain with qualified professionals.
+
+That distinction should be central to the product:
+
+The AI identifies, reconciles, explains, and prepares. The professional concludes and approves.
+
+2. The exact business problem
+
+A single cross-border sale can appear differently across several systems:
+
+Sales invoice
+Purchase invoice
+Customs declaration
+Bill of lading
+Intercompany agreement
+ERP general ledger
+Transfer-pricing policy
+Local File
+Customs valuation working paper
+
+The same transaction may contain inconsistent:
+
+product description;
+quantity;
+currency;
+unit price;
+Incoterm;
+related-party status;
+customs value;
+accounting amount;
+freight or insurance treatment;
+pricing-method reference;
+counterparty name;
+transaction date.
+
+The problem is not merely extracting each document. The hard problem is reconciling them into a single transaction model and showing why a discrepancy matters.
+
+Example demonstration case
+
+Use synthetic data only:
+
+Commercial invoice:
+USD 500,000, CIF, 1,000 metric tons
+
+Customs declaration:
+USD 470,000 customs value, FOB
+
+ERP record:
+USD 500,000 revenue
+
+Intercompany agreement:
+Pricing policy = market price less 2% distribution adjustment
+
+Local File extract:
+Transaction described as commodity trading under CPM
+
+System findings:
+1. Customs value differs by USD 30,000.
+2. Incoterm treatment is inconsistent.
+3. Contractual pricing basis differs from Local File description.
+4. ERP records do not separately identify freight.
+5. Manual professional review is required before any conclusion.
+
+
+This produces a visually understandable “before versus after” moment.
+
+3. Agent architecture
+
+Do not present it as six agents “talking to each other.” Present it as a controlled evidence workflow.
+
+                       BorderLens Orchestrator
+                                 │
+          ┌──────────────────────┼──────────────────────┐
+          ▼                      ▼                      ▼
+   Document Agent       Transaction Agent       Policy Agent
+   Extracts facts       Builds canonical        Retrieves applicable
+   with provenance      transaction model       policy passages
+          │                      │                      │
+          └──────────────────────┼──────────────────────┘
+                                 ▼
+                      Reconciliation Engine
+                     deterministic comparison
+                                 │
+                                 ▼
+                         Risk Analysis Agent
+                    explains material discrepancies
+                                 │
+                                 ▼
+                          Review Agent
+                  verifies citations and completeness
+                                 │
+                    ┌────────────┴────────────┐
+                    ▼                         ▼
+              Needs revision           Human approval
+
+Agent responsibilities
+1. Document Agent
+
+Extracts:
+
+document type;
+entities;
+dates;
+currency;
+value;
+quantities;
+Incoterms;
+product descriptions;
+contractual terms;
+document-page references.
+
+Output must be structured JSON, not prose.
+
+type DocumentFact = {
+  field: string;
+  value: string | number;
+  documentId: string;
+  page: number;
+  evidenceText: string;
+  confidence: number;
+};
+
+2. Transaction Agent
+
+Connects records that refer to the same commercial transaction.
+
+It creates a canonical record:
+
+type CrossBorderTransaction = {
+  transactionId: string;
+  seller: Entity;
+  buyer: Entity;
+  relatedParty: boolean;
+  goods: GoodsLine[];
+  invoiceValue: Money;
+  customsValue?: Money;
+  accountingValue?: Money;
+  incoterm?: string;
+  pricingPolicy?: string;
+  supportingEvidence: EvidenceReference[];
+};
+
+3. Policy Agent
+
+Retrieves relevant passages from a small, curated competition knowledge base:
+
+synthetic company TP policy;
+public customs guidance selected for the demonstration;
+public transfer-pricing reference;
+internal-control checklist created specifically for the prototype.
+
+Do not upload confidential client or employer materials to a public competition system.
+
+4. Reconciliation Engine
+
+This should be deterministic TypeScript, not an LLM:
+
+function reconcileTransaction(tx: CrossBorderTransaction): Finding[] {
+  const findings: Finding[] = [];
+
+  if (tx.customsValue && tx.invoiceValue.currency === tx.customsValue.currency) {
+    const variance =
+      Math.abs(tx.invoiceValue.amount - tx.customsValue.amount) /
+      tx.invoiceValue.amount;
+
+    if (variance > 0.01) {
+      findings.push({
+        type: "VALUE_VARIANCE",
+        severity: variance > 0.05 ? "HIGH" : "MEDIUM",
+        variance,
+        evidence: [tx.invoiceValue.source, tx.customsValue.source],
+      });
+    }
+  }
+
+  return findings;
+}
+
+
+The exact threshold should be explicitly labelled as a demo policy, not a legal threshold.
+
+5. Risk Analysis Agent
+
+Explains:
+
+what differs;
+why it could matter;
+which evidence supports the finding;
+what information is missing;
+what action a reviewer should consider.
+
+It must not provide an unsupported legal conclusion.
+
+6. Review Agent
+
+Checks:
+
+every finding has evidence;
+calculations reconcile;
+cited pages exist;
+no unsupported fact appears;
+missing evidence is clearly identified;
+human approval is requested where necessary.
+4. Google Cloud architecture
+
+Although you can use LangGraph.js for explicit workflow control, the judges award 40% for technical merit and Gen AI implementation. Make the Google AI components highly visible. The competition requires Gemini or Gemma, or supported agentic platforms, with deployment on Cloud Run or Firebase.
+
+Recommended prototype architecture
+Firebase Hosting
+      │
+      ▼
+Cloud Run API, Node.js/TypeScript
+      │
+      ├── LangGraph.js stateful orchestration
+      ├── Vertex AI Gemini
+      ├── Document AI
+      ├── BigQuery
+      ├── Cloud Storage
+      └── Firestore
+
+Responsibilities
+Firebase Hosting
+Upload interface
+Transaction dashboard
+Evidence comparison
+Findings panel
+Reviewer approval screen
+Cloud Run
+Node.js API
+LangGraph workflow
+File-processing coordination
+Reconciliation service
+Report generation
+Gemini on Vertex AI
+
+Use it for:
+
+document semantic extraction after OCR;
+transaction linking;
+discrepancy explanation;
+policy-grounded recommendations;
+structured reviewer output.
+Document AI
+
+Use for OCR and layout-aware extraction from invoices, declarations, contracts, and supporting documents.
+
+Cloud Storage
+
+Store uploaded synthetic documents and generated reports.
+
+BigQuery
+
+Store canonical transaction records and enable cross-transaction analytics. For the prototype, show one portfolio query such as:
+
+SELECT
+  finding_type,
+  COUNT(*) AS transaction_count,
+  SUM(absolute_value_difference) AS total_difference
+FROM borderlens_findings
+GROUP BY finding_type;
+
+Firestore
+
+Use for:
+
+workflow status;
+user session;
+graph execution status;
+reviewer decisions.
+Optional components
+Secret Manager for service secrets
+Cloud Logging for execution traces
+Cloud Build for deployment
+Artifact Registry for the Cloud Run image
+
+Do not add components that will not appear in the demo or architecture explanation.
+
+5. What makes the use of Gen AI meaningful
+
+The judging rules specifically ask whether Gen AI directly contributes to solving the problem, rather than being superficially added.
+
+Your explanation should separate AI and deterministic engineering.
+
+Gen AI performs semantic work
+Understands heterogeneous document language
+Maps differently worded items to one transaction
+Interprets contractual terms
+Generates policy-grounded explanations
+Identifies missing supporting evidence
+Produces reviewer-friendly findings
+Deterministic components perform exact work
+Currency and arithmetic calculations
+Variance computation
+Duplicate detection
+Schema validation
+Authorization
+Data persistence
+Threshold application
+Citation existence checks
+Workflow-step limits
+
+This hybrid design is more credible than claiming that Gemini performs every task.
+
+6. High-impact user experience
+
+The UI only accounts for 10%, but it determines whether judges understand the product.
+
+Screen 1: Transaction package
+
+Display six document cards:
+
+✓ Commercial invoice
+✓ Customs declaration
+✓ Intercompany agreement
+✓ ERP extract
+✓ Bill of lading
+✓ TP policy
+
+
+Each card shows processing status.
+
+Screen 2: Transaction Digital Twin
+
+Show the normalized transaction:
+
+Seller: Alpha Commodities Singapore
+Buyer: Alpha Trading Vietnam
+Goods: 1,000 MT agricultural commodity
+Invoice value: USD 500,000
+Customs value: USD 470,000
+ERP value: USD 500,000
+Incoterm: CIF / FOB discrepancy
+Related party: Yes
+
+Screen 3: Evidence matrix
+Field	Invoice	Customs	ERP	AgreementValue	500,000	470,000	500,000	Formula
+Currency	USD	USD	USD	USD
+Incoterm	CIF	FOB	N/A	CIF
+Quantity	1,000 MT	1,000 MT	N/A	N/A
+
+Use red or amber highlighting only for material differences.
+
+Screen 4: Risk findings
+
+Each finding needs:
+
+title;
+severity;
+explanation;
+financial difference;
+documentary evidence;
+recommended next action;
+review status.
+Screen 5: Reviewer package
+
+Generate:
+
+executive summary;
+discrepancy register;
+evidence references;
+missing-information request;
+reviewer checklist;
+decision log.
+7. Two additional concepts if BorderLens is not selected
+Alternative A: “TP Method Navigator”
+
+An evidence-grounded assistant that classifies a controlled transaction, constructs a FAR profile, evaluates CUP/RPM/cost-plus/TNMM/PSM applicability, and produces a method-selection matrix with evidence and reviewer controls.
+
+This connects well with your existing knowledge. Internal TP training materials identify comparability factors including property or service characteristics, FAR, contractual terms, economic circumstances, and business strategies. They also emphasize assessing whether differences materially affect price or margin and whether reliable adjustments are possible.
+
+Strength
+
+Highly domain-specific and difficult for a generic team to reproduce.
+
+Weakness
+
+Method selection is nuanced and difficult to demonstrate safely in three minutes. The product must clearly present its output as a review aid, not an automated tax conclusion.
+
+Alternative B: “ComparableScreen AI”
+
+An explainable comparable-company screening workbench that:
+
+imports candidate companies;
+normalizes company names;
+applies deterministic quantitative screens;
+analyzes business descriptions;
+extracts acceptance/rejection evidence;
+produces a review trail;
+supports human override.
+Strength
+
+Excellent demonstration of structured plus unstructured processing.
+
+Weakness
+
+Real commercial databases may create licensing problems. Use a synthetic dataset or openly licensed public company descriptions.
+
+Alternative C: “CloseGuard AI”
+
+An accounting close and tax-reconciliation assistant that connects:
+
+trial balance;
+general ledger;
+tax adjustments;
+intercompany balances;
+invoices;
+tax-return working papers.
+
+It flags unreconciled balances and drafts follow-up questions.
+
+Strength
+
+Easier for judges to understand.
+
+Weakness
+
+The accounting-copilot category is crowded. You would need a distinctive cross-border or related-party angle.
+
+8. Prioritization of ideas
+Rank	Idea	Competition strength	Main reason1	BorderLens AI	Highest	Cross-domain, visual, novel, evidence-based
+2	ComparableScreen AI	High	Strong workflow automation and explainability
+3	TP Method Navigator	High but risky	Deep specialization, but hard to scope safely
+4	CloseGuard AI	Medium-high	Clear value but less differentiated
+5	Generic tax chatbot	Low	Easy to copy and difficult to defend
+
+My recommendation is BorderLens AI, with only one transaction scenario implemented deeply.
+
+9. Immediate build plan for the remaining submission window
+
+Because the official deadline is October 18, focus on a vertical slice rather than a complete platform.
+
+Workstream 1: Core workflow
+
+Build only:
+
+Upload six synthetic documents
+→ extract facts
+→ create transaction record
+→ run three discrepancy rules
+→ produce three grounded findings
+→ approve one finding
+→ export summary
+
+
+Do not build user administration, billing, full legal coverage, or a large document library.
+
+Workstream 2: Technical implementation
+Backend
+POST /api/cases
+POST /api/cases/:id/documents
+POST /api/cases/:id/analyze
+GET  /api/cases/:id
+POST /api/cases/:id/review
+GET  /api/cases/:id/report
+
+LangGraph state
+type BorderLensState = {
+  caseId: string;
+  documents: ProcessedDocument[];
+  extractedFacts: DocumentFact[];
+  transaction?: CrossBorderTransaction;
+  findings: Finding[];
+  reviewFindings: ReviewFinding[];
+  status:
+    | "UPLOADED"
+    | "EXTRACTING"
+    | "RECONCILING"
+    | "REVIEWING"
+    | "AWAITING_HUMAN"
+    | "COMPLETE";
+  revisionCount: number;
+};
+
+Graph
+START
+  ↓
+validateFiles
+  ↓
+extractDocuments
+  ↓
+buildTransaction
+  ↓
+runDeterministicReconciliation
+  ↓
+generateRiskExplanations
+  ↓
+verifyEvidence
+  ├── fail and revisionCount < 1 → revise
+  └── pass → requestHumanApproval
+  ↓
+generateReport
+  ↓
+END
+
+
+Allow only one automated revision in the prototype. This visibly demonstrates bounded agent control.
+
+Workstream 3: Dataset
+
+Create:
+
+one clean transaction;
+one transaction with three discrepancies;
+one incomplete transaction.
+
+This is enough to demonstrate:
+
+normal result;
+risk detection;
+graceful handling of missing evidence.
+Workstream 4: Evaluation
+
+Add at least ten tests:
+
+1. Invoice value extracted correctly
+2. Customs value extracted correctly
+3. Currency mismatch detected
+4. Incoterm mismatch detected
+5. Value variance calculated exactly
+6. Missing agreement reported
+7. Every finding contains evidence
+8. Invalid page citation rejected
+9. Workflow stops after bounded revision
+10. Report requires human review status
+
+
+Present this test suite in the repository and deck. Judges can then see that the project is engineered, not merely prompted.
+
+10. Team allocation
+
+For a four-person team:
+
+Person 1: AI and orchestration
+Gemini integration
+LangGraph workflow
+structured outputs
+review loop
+evaluation tests
+Person 2: Backend and cloud
+Cloud Run
+Document AI
+Cloud Storage
+Firestore/BigQuery
+logging and deployment
+Person 3: Frontend and UX
+upload flow
+evidence matrix
+finding cards
+transaction view
+report display
+Person 4: Domain and presentation
+synthetic case design
+discrepancy logic
+policy corpus
+pitch deck
+video script
+business impact framing
+
+For a two-person team, combine 1+2 and 3+4.
+
+11. Three-minute demo structure
+0:00–0:20: The problem
+
+“A cross-border transaction is represented across invoices, customs records, contracts, ERP entries, and transfer-pricing documentation. Reviewers currently have to establish whether these records describe the same transaction and whether they agree.”
+
+0:20–0:40: The solution
+
+“BorderLens AI creates a traceable transaction digital twin, reconciles the documents, identifies discrepancies, and produces an evidence-linked review package.”
+
+0:40–1:35: Live workflow
+Upload documents.
+Show processing.
+Open normalized transaction.
+Reveal value and Incoterm discrepancies.
+Click one finding.
+Show the exact source pages.
+1:35–2:05: Agent architecture
+
+Show one clean diagram:
+
+Document extraction
+→ transaction construction
+→ deterministic reconciliation
+→ Gemini explanation
+→ independent evidence validation
+→ human approval
+
+2:05–2:30: Technical credibility
+
+Mention:
+
+Gemini on Vertex AI;
+Document AI;
+LangGraph.js;
+Cloud Run;
+BigQuery/Firestore;
+structured JSON;
+bounded retries;
+evidence validation;
+human approval.
+2:30–2:50: Impact
+
+Use prototype-measured numbers only. Do not invent savings.
+
+For example:
+
+“On our three synthetic cases, all deliberately introduced
+value and Incoterm discrepancies were detected, and every
+displayed finding linked back to source evidence.”
+
+
+Only say this if your tests actually demonstrate it.
+
+2:50–3:00: Closing
+
+“BorderLens turns fragmented cross-border records into one controlled, explainable review process: AI for analysis, deterministic rules for reconciliation, and professionals for judgment.”
+
+12. Deck structure
+
+Use 8–10 slides:
+
+Title and one-sentence proposition
+The fragmented cross-border transaction problem
+Target users and workflow
+Live product experience
+AI and agent architecture
+Google Cloud architecture
+Innovation and differentiation
+Evaluation, safety, and human oversight
+Scalability and future roadmap
+Team and closing
+
+Explicitly map slides to the judging criteria:
+
+Technical merit → Slides 5, 6 and 8
+Problem impact → Slides 2 and 3
+Innovation → Slides 4 and 7
+UX → Slide 4 and live demo
+
+13. Repository checklist
+borderlens-ai/
+├── apps/
+│   ├── web/
+│   └── api/
+├── packages/
+│   ├── graph/
+│   ├── extraction/
+│   ├── reconciliation/
+│   ├── schemas/
+│   └── evaluation/
+├── sample-data/
+│   ├── clean-case/
+│   ├── discrepancy-case/
+│   └── incomplete-case/
+├── tests/
+├── docs/
+│   ├── architecture.md
+│   ├── safety.md
+│   ├── evaluation.md
+│   └── demo-script.md
+├── Dockerfile
+├── cloudbuild.yaml
+├── README.md
+└── LICENSE
+
+
+The README should contain:
+
+problem;
+product screenshots;
+architecture;
+Google Cloud services;
+local setup;
+deployment;
+synthetic dataset disclosure;
+evaluation results;
+security limitations;
+demo link.
+14. Important compliance boundary
+
+Do not use:
+
+confidential client documents;
+employer-owned templates;
+proprietary databases;
+internal methodologies copied into a public repository;
+identifiable client transaction data;
+internal emails or deliverables.
+
+The competition requires a public GitHub repository, so all sample information should be synthetic, public, or appropriately licensed. Internal guidance also emphasizes that professional judgment and accountability remain with professionals even where AI assists with research, review, analysis, and drafting.
+
+Add a prominent product statement:
+
+“BorderLens AI is a professional review-support prototype. It does not provide legal or tax advice and does not autonomously determine customs value, transfer prices, tax liabilities, or filing positions.”
+
+Final recommendation
+
+Build BorderLens AI as a focused, evidence-grounded “transaction digital twin” for one cross-border related-party transaction.
+
+The winning combination is:
+
+A problem you understand deeply
++ a Google-native deployed prototype
++ meaningful Gemini use
++ deterministic financial reconciliation
++ explicit multi-agent control
++ source-level evidence
++ human professional approval
++ a polished three-minute story
+
+
+The differentiator is not “we used several agents.” It is:
+
+We turned five inconsistent business records into one controlled transaction model, detected material discrepancies, showed the evidence, and preserved professional accountability.

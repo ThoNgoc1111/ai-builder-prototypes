@@ -1,0 +1,17 @@
+import express from "express";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import fs from "node:fs/promises";
+import { BorderInputSchema } from "./borderlens/schema.js";
+import { analyzeBorderLens } from "./borderlens/graph.js";
+import { ComparableInputSchema } from "./comparablescreen/schema.js";
+import { screenComparables } from "./comparablescreen/graph.js";
+const app=express(); app.use(express.json({limit:"2mb"}));
+const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),"../..");
+app.use(express.static(path.join(root,"public")));
+app.get("/api/health",(_req,res)=>res.json({ok:true,mockAI:process.env.MOCK_AI!=="false"}));
+app.get("/api/samples/:name",async(req,res)=>{const allowed=new Set(["borderlens","comparablescreen"]);if(!allowed.has(req.params.name))return res.status(404).end();res.type("json").send(await fs.readFile(path.join(root,"data",req.params.name,"sample.json"),"utf8"));});
+app.post("/api/borderlens/analyze",async(req,res,next)=>{try{res.json(await analyzeBorderLens(BorderInputSchema.parse(req.body)));}catch(e){next(e);}});
+app.post("/api/comparables/screen",async(req,res,next)=>{try{res.json(await screenComparables(ComparableInputSchema.parse(req.body)));}catch(e){next(e);}});
+app.use((e:unknown,_req:express.Request,res:express.Response,_next:express.NextFunction)=>res.status(400).json({error:e instanceof Error?e.message:"Request failed"}));
+app.listen(Number(process.env.PORT||8080),()=>console.log(`Listening on ${process.env.PORT||8080}`));
